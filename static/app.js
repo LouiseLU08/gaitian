@@ -1321,11 +1321,11 @@ async function actionNewRound(confirm = false) {
 async function actionCopy(kind) {
   const room = state.room;
   let text = "";
-  if (kind === "link") {
+  if (kind === "copy-link") {
     text = roomShareUrl(room.code);
-  } else if (kind === "code") {
+  } else if (kind === "copy-code") {
     text = room.code;
-  } else if (kind === "memo") {
+  } else if (kind === "copy-memo") {
     text = scheduledMemoText(room);
   } else {
     text = `【改天见】${room.topic}\n房间码：${room.code}\n链接：${roomShareUrl(room.code)}`;
