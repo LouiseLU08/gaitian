@@ -1,0 +1,5 @@
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.12"
+
+[start]
+cmd = "python3 server.py"
