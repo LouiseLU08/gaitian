@@ -5,6 +5,10 @@ const state = {
   create: defaultCreate(),
   editor: { availability: {}, activeDate: null },
   myNickname: "",
+  myMemberCode: "",
+  myMemberNo: 0,
+  identityDraft: { nickname: "", memberCode: "", mode: "join" },
+  identityState: "loading",
   publicBaseUrl: "",
   modal: null,
   toast: "",
@@ -12,6 +16,17 @@ const state = {
 
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const TIME_VALUES = Array.from({ length: 49 }, (_, index) => index * 30);
+const COLOR_LABELS = {
+  blue: "蓝色",
+  green: "绿色",
+  orange: "橙色",
+  purple: "紫色",
+  red: "红色",
+  teal: "青色",
+  pink: "粉色",
+  brown: "棕色",
+  gray: "灰色",
+};
 const PRESETS = [
   { key: "full", label: "整天", start: "00:00", end: "24:00" },
   { key: "morning", label: "上午", start: "08:00", end: "12:00" },
@@ -33,26 +48,56 @@ function parseRoute() {
 }
 
 function storageKey() {
-  return state.roomCode ? `yueshijian_nickname_${state.roomCode}` : "yueshijian_nickname";
+  return state.roomCode
+    ? `yueshijian_identity_${state.roomCode}`
+    : "yueshijian_identity";
 }
 
-function loadNickname() {
+function loadMyIdentity() {
   try {
-    state.myNickname =
-      localStorage.getItem(storageKey()) ||
-      localStorage.getItem("yueshijian_nickname") ||
-      "";
+    const raw = localStorage.getItem(storageKey());
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state.myNickname = parsed.nickname || "";
+      state.myMemberCode = parsed.memberCode || "";
+      state.myMemberNo = Number(parsed.memberNo || 0);
+    } else {
+      const legacy = localStorage.getItem(
+        state.roomCode ? `yueshijian_nickname_${state.roomCode}` : "yueshijian_nickname"
+      );
+      if (legacy) {
+        state.myNickname = legacy;
+        state.myMemberCode = "";
+      }
+    }
   } catch (_) {
     state.myNickname = "";
+    state.myMemberCode = "";
   }
 }
 
-function saveNickname(code = state.roomCode) {
+function saveMyIdentity(code = state.roomCode) {
   try {
-    localStorage.setItem(
-      code ? `yueshijian_nickname_${code}` : "yueshijian_nickname",
-      state.myNickname
-    );
+    if (code && state.myNickname && state.myMemberCode) {
+      localStorage.setItem(
+        `yueshijian_identity_${code}`,
+        JSON.stringify({
+          nickname: state.myNickname,
+          memberCode: state.myMemberCode,
+          memberNo: state.myMemberNo,
+        })
+      );
+    }
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function clearMyIdentity(roomKey = state.roomCode) {
+  try {
+    if (roomKey) {
+      localStorage.removeItem(`yueshijian_identity_${roomKey}`);
+    }
   } catch (_) {
     // ignore storage errors
   }
@@ -207,10 +252,12 @@ function statusMeta(status) {
 }
 
 function participantName(room = state.room) {
-  const participant = (room.participants || []).find(
-    (item) => item.nickname === state.myNickname
+  const matchNo = state.myMemberNo;
+  return (room.participants || []).find(
+    (item) =>
+      (matchNo && item.memberNo === matchNo) ||
+      (!matchNo && item.nickname === state.myNickname)
   );
-  return participant;
 }
 
 function currentAvailability() {
@@ -601,6 +648,11 @@ function roomMetaMarkup(room) {
         <button class="btn btn-sm btn-ghost" data-action="copy-link">复制链接</button>
         <button class="btn btn-sm btn-ghost" data-action="copy-code">复制房间码</button>
         ${
+          state.myNickname === room.creator && state.myMemberCode
+            ? `<button class="btn btn-sm btn-ghost" data-action="open-member-codes">成员访问码</button>`
+            : ""
+        }
+        ${
           room.status === "need_round" && state.myNickname === room.creator
             ? `<button class="btn btn-sm btn-amber" data-action="open-new-round">发起新一轮</button>`
             : ""
@@ -654,16 +706,20 @@ function participantsMarkup(room) {
           list.length
             ? list
                 .map((participant) => {
-                  const isMe = participant.nickname === state.myNickname;
+                  const isMe =
+                    (state.myMemberNo && participant.memberNo === state.myMemberNo) ||
+                    participant.nickname === state.myNickname;
                   const slotCount = participant.availability.length;
                   return `
                     <div class="participant-row">
-                      <span class="avatar ${participant.isCreator ? "creator-avatar" : ""}">${esc(
+                      <span class="avatar avatar-${esc(participant.color || "gray")}">${esc(
                         participant.nickname.slice(0, 1)
                       )}</span>
                       <div>
                         <div class="participant-name">
-                          ${esc(participant.nickname)}
+                          ${esc(participant.nickname)} <span class="member-tag">#${participant.memberNo} ${esc(
+                            COLOR_LABELS[participant.color] || participant.color || ""
+                          )}</span>
                           ${participant.isCreator ? '<span class="chip chip-green">发起人</span>' : ""}
                           ${isMe ? '<span class="chip chip-blue">我</span>' : ""}
                         </div>
@@ -700,11 +756,28 @@ function myScheduleFormMarkup(room) {
         </div>
       </div>
       <div class="tool-panel panel-pad">
+        <div class="member-card">
+          <span class="avatar avatar-${esc(me ? me.color : "gray")}">${esc(
+            (state.myNickname || "?").slice(0, 1)
+          )}</span>
+          <div>
+            <div class="participant-name">
+              ${esc(state.myNickname)}
+              ${me ? `<span class="chip chip-blue">#${me.memberNo} ${esc(COLOR_LABELS[me.color] || me.color)}</span>` : ""}
+            </div>
+            <div class="small muted">我的访问码：${esc(state.myMemberCode)}</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-sm btn-ghost" data-action="copy-member-code">复制访问码</button>
+        </div>
         <div class="grid-2">
-          ${nicknameInputMarkup("你的昵称")}
           <div class="field">
             <label>DDL</label>
             <div class="muted small">${esc(formatDate(endDate, true))} ${esc(room.endTime || "24:00")}</div>
+          </div>
+          <div class="field">
+            <label>换设备</label>
+            <div class="muted small">用昵称 + 访问码即可恢复身份</div>
           </div>
         </div>
         ${editorMarkup()}
@@ -750,6 +823,14 @@ function renderApp() {
     return;
   }
   if (state.roomCode) {
+    if (state.identityState === "loading") {
+      app.innerHTML = `<div class="loading">正在读取房间…</div>`;
+      return;
+    }
+    if (state.identityState === "needed") {
+      app.innerHTML = identifyPageMarkup(state.room);
+      return;
+    }
     app.innerHTML = roomMarkup(state.room);
     return;
   }
@@ -831,6 +912,41 @@ function joinPageMarkup() {
           <input id="room-code" data-room-join maxlength="6" placeholder="6 位房间码" autocomplete="off">
         </div>
         <button class="btn btn-primary btn-block" data-action="join-room">进入房间</button>
+      </div>
+      ${toastMarkup()}
+    </main>
+  `;
+}
+
+function identifyPageMarkup(room) {
+  const draft = state.identityDraft;
+  const returning = draft.mode === "return";
+  return `
+    ${topbarMarkup(true)}
+    <main class="join-page">
+      <div class="tool-panel panel-pad join-card">
+        <div class="join-logo">${peopleLogoMarkup(52)}</div>
+        <h1>进入房间</h1>
+        <div class="room-meta">${esc(room.topic)} · 房间码 ${room.code}</div>
+        <div class="alert alert-info mt-8">已有 ${room.filledCount} / ${room.participantCount} 人填写时间</div>
+        <div class="quick-btn-group mt-8">
+          <button class="btn btn-sm ${returning ? "btn-ghost" : "btn-soft"}" data-action="identity-mode" data-mode="join">首次加入</button>
+          <button class="btn btn-sm ${returning ? "btn-soft" : "btn-ghost"}" data-action="identity-mode" data-mode="return">找回身份</button>
+        </div>
+        <div class="field">
+          <label for="identity-nickname">你的昵称</label>
+          <input id="identity-nickname" value="${esc(draft.nickname || state.myNickname)}" data-model="identityNickname" maxlength="20" placeholder="昵称">
+        </div>
+        ${
+          returning
+            ? `<div class="field">
+                <label for="identity-code">成员访问码</label>
+                <input id="identity-code" value="${esc(draft.memberCode)}" data-model="identityMemberCode" maxlength="6" placeholder="6 位访问码">
+              </div>
+              <div class="small muted">访问码可在发起人的成员列表里找回</div>`
+            : `<div class="small muted">首次加入会自动分配颜色、编号和访问码</div>`
+        }
+        <button class="btn btn-primary btn-block mt-8" data-action="identify-submit">${returning ? "恢复我的身份" : "加入房间"}</button>
       </div>
       ${toastMarkup()}
     </main>
@@ -1124,6 +1240,38 @@ function modalMarkup() {
       </div>
     `;
   }
+  if (modal.kind === "member-codes") {
+    return `
+      <div class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true">
+          <h2>成员访问码</h2>
+          <div class="member-code-list">
+            ${(modal.members || [])
+              .map(
+                (member) => `
+                  <div class="participant-row">
+                    <span class="avatar avatar-${esc(member.color || "gray")}">${esc(
+                      member.nickname.slice(0, 1)
+                    )}</span>
+                    <div class="participant-name">
+                      ${esc(member.nickname)}
+                      <span class="member-tag">#${member.memberNo}</span>
+                    </div>
+                    <div class="spacer"></div>
+                    <div class="member-code-value">${esc(member.memberCode || "未分配")}</div>
+                  </div>
+                `
+              )
+              .join("")}
+          </div>
+          <div class="small muted">访问码用于本人换设备恢复身份；请只分享给本人。</div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" data-action="close-modal">关闭</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   return "";
 }
 
@@ -1163,7 +1311,7 @@ async function pollRoom() {
 
 function syncEditorWithMe() {
   const me = participantName();
-  if (me && !Object.keys(state.editor.availability).length) {
+  if (me && me.hasMemberCode && !Object.keys(state.editor.availability).length) {
     state.editor.availability = {};
     for (const slot of me.availability || []) {
       const daySlots = state.editor.availability[slot.date] || [];
@@ -1174,14 +1322,28 @@ function syncEditorWithMe() {
 }
 
 async function loadRoom() {
-  loadNickname();
+  loadMyIdentity();
   const config = await api("/api/config");
   state.publicBaseUrl = (config.publicBaseUrl || "").replace(/\/+$/, "");
   const data = await api(`/api/room/${state.roomCode}`);
   state.lastRoomKey = JSON.stringify(data);
   state.room = data;
   state.editor = { availability: {}, activeDate: null };
-  syncEditorWithMe();
+  const me = participantName();
+  const identityStillValid =
+    me &&
+    (state.myMemberCode || me.hasMemberCode) &&
+    me.nickname === state.myNickname;
+  state.identityState =
+    identityStillValid ? "ready" : data.chosen ? "ready" : "needed";
+  if (!state.myNickname && me) {
+    state.myNickname = me.nickname;
+  }
+  if (state.identityState === "ready") {
+    syncEditorWithMe();
+  } else {
+    state.editor = { availability: {}, activeDate: null };
+  }
   render();
   window.setInterval(pollRoom, 15000);
 }
@@ -1206,16 +1368,67 @@ async function actionCreateRoom() {
       }),
     });
     state.myNickname = room.creator;
-    saveNickname(room.code);
+    state.myMemberCode = room.creatorMemberCode || "";
+    state.myMemberNo = 1;
+    saveMyIdentity(room.code);
+    state.identityState = "ready";
     location.href = `/r/${room.code}`;
   } catch (error) {
     showToast(error.message);
   }
 }
 
-async function actionRespond() {
-  if (!state.myNickname.trim()) {
+async function actionIdentify() {
+  const draft = state.identityDraft;
+  const nickname = (draft.nickname || state.myNickname || "").trim();
+  if (!nickname) {
     showToast("请填写昵称");
+    return;
+  }
+  try {
+    const identity = await api(`/api/room/${state.roomCode}/identify`, {
+      method: "POST",
+      body: JSON.stringify({
+        nickname,
+        memberCode: draft.memberCode.trim().toUpperCase(),
+      }),
+    });
+    state.myNickname = identity.nickname;
+    state.myMemberCode = identity.memberCode;
+    state.myMemberNo = Number(identity.memberNo || 0);
+    state.identityDraft = { nickname: identity.nickname, memberCode: "", mode: "join" };
+    saveMyIdentity();
+    state.identityState = "ready";
+    state.editor = { availability: {}, activeDate: null };
+    await refreshRoom();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function actionShowMemberCodes() {
+  if (!state.myMemberCode) {
+    showToast("请先完成身份确认");
+    return;
+  }
+  try {
+    const data = await api(`/api/room/${state.roomCode}/member_codes`, {
+      method: "POST",
+      body: JSON.stringify({
+        nickname: state.myNickname,
+        memberCode: state.myMemberCode,
+      }),
+    });
+    state.modal = { kind: "member-codes", members: data.members || [] };
+    render();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function actionRespond() {
+  if (!state.myMemberCode) {
+    showToast("请先完成身份确认");
     return;
   }
   try {
@@ -1223,12 +1436,13 @@ async function actionRespond() {
       method: "POST",
       body: JSON.stringify({
         nickname: state.myNickname,
+        memberCode: state.myMemberCode,
         availability: availabilityToList(),
       }),
     });
     state.lastRoomKey = JSON.stringify(room);
     adoptRoom(room);
-    saveNickname();
+    saveMyIdentity();
     state.editor.availability = {};
     syncEditorWithMe();
     render();
@@ -1239,14 +1453,18 @@ async function actionRespond() {
 }
 
 async function actionChoosePlan(planId) {
-  if (!state.myNickname) {
-    showToast("请先填写昵称并保存时间");
+  if (!state.myMemberCode) {
+    showToast("请先完成身份确认");
     return;
   }
   try {
     const room = await api(`/api/room/${state.roomCode}/choose`, {
       method: "POST",
-      body: JSON.stringify({ nickname: state.myNickname, planId }),
+      body: JSON.stringify({
+        nickname: state.myNickname,
+        memberCode: state.myMemberCode,
+        planId,
+      }),
     });
     state.lastRoomKey = JSON.stringify(room);
     adoptRoom(room);
@@ -1261,7 +1479,11 @@ async function actionAdjustPlan(planId) {
   try {
     const room = await api(`/api/room/${state.roomCode}/adjust`, {
       method: "POST",
-      body: JSON.stringify({ nickname: state.myNickname, planId }),
+      body: JSON.stringify({
+        nickname: state.myNickname,
+        memberCode: state.myMemberCode,
+        planId,
+      }),
     });
     state.lastRoomKey = JSON.stringify(room);
     adoptRoom(room);
@@ -1276,7 +1498,10 @@ async function actionSkipPlan() {
   try {
     const room = await api(`/api/room/${state.roomCode}/skip`, {
       method: "POST",
-      body: JSON.stringify({ nickname: state.myNickname }),
+      body: JSON.stringify({
+        nickname: state.myNickname,
+        memberCode: state.myMemberCode,
+      }),
     });
     state.lastRoomKey = JSON.stringify(room);
     adoptRoom(room);
@@ -1302,6 +1527,7 @@ async function actionNewRound(confirm = false) {
       method: "POST",
       body: JSON.stringify({
         nickname: state.room.creator,
+        memberCode: state.myMemberCode,
         startDate: todayKey(),
         endDate: state.modal.endDate,
         endTime: state.modal.endTime,
@@ -1325,6 +1551,8 @@ async function actionCopy(kind) {
     text = roomShareUrl(room.code);
   } else if (kind === "copy-code") {
     text = room.code;
+  } else if (kind === "copy-member-code") {
+    text = state.myMemberCode;
   } else if (kind === "copy-memo") {
     text = scheduledMemoText(room);
   } else {
@@ -1403,6 +1631,19 @@ function handleClick(event) {
     location.href = `/r/${code}`;
     return;
   }
+  if (action === "identity-mode") {
+    state.identityDraft.mode = target.dataset.mode;
+    render();
+    return;
+  }
+  if (action === "identify-submit") {
+    actionIdentify();
+    return;
+  }
+  if (action === "open-member-codes") {
+    actionShowMemberCodes();
+    return;
+  }
   if (action === "respond") {
     actionRespond();
     return;
@@ -1427,7 +1668,8 @@ function handleClick(event) {
     action === "copy-link" ||
     action === "copy-code" ||
     action === "copy-invite" ||
-    action === "copy-memo"
+    action === "copy-memo" ||
+    action === "copy-member-code"
   ) {
     actionCopy(target.dataset.action);
     return;
@@ -1451,7 +1693,11 @@ function handleInput(event) {
   const target = event.target;
   const model = target.dataset.model;
   if (model) {
-    if (state.roomCode) {
+    if (model === "identityNickname") {
+      state.identityDraft.nickname = target.value;
+    } else if (model === "identityMemberCode") {
+      state.identityDraft.memberCode = target.value;
+    } else if (state.roomCode && state.identityState !== "needed") {
       state.myNickname = target.value;
     } else {
       if (model !== "dayStart" && model !== "dayEnd") {
