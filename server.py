@@ -131,6 +131,8 @@ def load_rooms():
             rooms = {}
     else:
         rooms = {}
+    for room in rooms.values():
+        normalize_member_colors(room)
 
 
 def save_rooms():
@@ -163,10 +165,8 @@ def generate_member_code(room):
             return code
 
 
-def member_color(room):
-    return MEMBER_COLORS[
-        (len(room.get("participants", [])) - 1) % len(MEMBER_COLORS)
-    ]
+def member_color(room, member_no):
+    return MEMBER_COLORS[(member_no - 1) % len(MEMBER_COLORS)]
 
 
 def participant_by_member_code(room, member_code):
@@ -179,9 +179,13 @@ def participant_by_member_code(room, member_code):
 def ensure_member_identity(room, participant):
     if not participant.get("memberCode"):
         participant["memberCode"] = generate_member_code(room)
-    if not participant.get("color"):
-        participant["color"] = member_color(room)
     return participant
+
+
+def normalize_member_colors(room):
+    for index, participant in enumerate(room.get("participants", []), start=1):
+        participant["color"] = member_color(room, index)
+    return room
 
 
 def authorize_member(room, nickname, member_code):
@@ -502,15 +506,13 @@ def identify_in_room(code, payload):
                     raise PermissionError("identity")
             else:
                 existing["memberCode"] = generate_member_code(room)
-                existing["color"] = (
-                    MEMBER_COLORS[0]
-                    if existing.get("isCreator")
-                    else member_color(room)
-                )
+                normalize_member_colors(room)
             participant = existing
         else:
             if len(room.get("participants", [])) >= room["participantCount"]:
                 raise LookupError("room_full")
+            next_no = len(room.get("participants", [])) + 1
+            next_color = member_color(room, next_no)
             participant = {
                 "nickname": nickname,
                 "isCreator": nickname == room["creator"],
@@ -518,15 +520,12 @@ def identify_in_room(code, payload):
                 "availability": [],
                 "updatedAt": datetime.now().isoformat(timespec="seconds"),
                 "memberCode": member_code or generate_member_code(room),
-                "color": (
-                    MEMBER_COLORS[0]
-                    if nickname == room["creator"]
-                    else member_color(room)
-                ),
+                "color": next_color,
             }
             if member_code and participant_by_member_code(room, member_code):
                 raise PermissionError("identity")
             room["participants"].append(participant)
+            normalize_member_colors(room)
         save_rooms()
         return {
             "code": room["code"],
