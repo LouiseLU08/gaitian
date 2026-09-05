@@ -17,6 +17,9 @@ ROOMS_FILE = DATA_DIR / "rooms.json"
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
+MEMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+MEMBER_CODE_LENGTH = 6
+MEMBER_COLORS = ["blue", "green", "orange", "purple", "red", "teal", "pink", "brown"]
 TIME_STEP_MINUTES = 30
 MAX_RANGE_DAYS = 45
 MAX_PARTICIPANTS = 20
@@ -144,6 +147,52 @@ def generate_code():
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
         if code not in rooms:
             return code
+
+
+def generate_member_code(room):
+    used = {
+        participant.get("memberCode")
+        for participant in room.get("participants", [])
+        if participant.get("memberCode")
+    }
+    while True:
+        code = "".join(
+            secrets.choice(MEMBER_ALPHABET) for _ in range(MEMBER_CODE_LENGTH)
+        )
+        if code not in used:
+            return code
+
+
+def member_color(room):
+    return MEMBER_COLORS[
+        (len(room.get("participants", [])) - 1) % len(MEMBER_COLORS)
+    ]
+
+
+def participant_by_member_code(room, member_code):
+    for participant in room.get("participants", []):
+        if participant.get("memberCode") == member_code:
+            return participant
+    return None
+
+
+def ensure_member_identity(room, participant):
+    if not participant.get("memberCode"):
+        participant["memberCode"] = generate_member_code(room)
+    if not participant.get("color"):
+        participant["color"] = member_color(room)
+    return participant
+
+
+def authorize_member(room, nickname, member_code):
+    if not nickname or not member_code:
+        raise PermissionError("identity")
+    participant = participant_by_nickname(room, nickname)
+    if participant is None:
+        raise PermissionError("not participant")
+    if participant.get("memberCode") != member_code:
+        raise PermissionError("identity")
+    return participant
 
 
 def participant_by_nickname(room, nickname):
@@ -414,19 +463,30 @@ def create_room(payload):
                 "filled": True,
                 "availability": availability,
                 "updatedAt": datetime.now().isoformat(timespec="seconds"),
+                "memberCode": generate_member_code(
+                    {
+                        "participants": [],
+                    }
+                ),
+                "color": MEMBER_COLORS[0],
             }
         ],
         "chosen": None,
         "rejectedCandidateIds": [],
     }
+    creator_code = room["participants"][0]["memberCode"]
+    creator_color = room["participants"][0]["color"]
     with rooms_lock:
         rooms[room["code"]] = room
         save_rooms()
+    room["creatorMemberCode"] = creator_code
+    room["creatorColor"] = creator_color
     return room
 
 
-def respond_to_room(code, payload):
+def identify_in_room(code, payload):
     nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
     if not nickname or len(nickname) > 20:
         raise ValueError("nickname")
     with rooms_lock:
@@ -435,6 +495,61 @@ def respond_to_room(code, payload):
             raise KeyError("room")
         if room.get("chosen"):
             raise PermissionError("scheduled")
+        existing = participant_by_nickname(room, nickname)
+        if existing is not None:
+            if existing.get("memberCode"):
+                if not member_code or existing["memberCode"] != member_code:
+                    raise PermissionError("identity")
+            else:
+                existing["memberCode"] = generate_member_code(room)
+                existing["color"] = (
+                    MEMBER_COLORS[0]
+                    if existing.get("isCreator")
+                    else member_color(room)
+                )
+            participant = existing
+        else:
+            if len(room.get("participants", [])) >= room["participantCount"]:
+                raise LookupError("room_full")
+            participant = {
+                "nickname": nickname,
+                "isCreator": nickname == room["creator"],
+                "filled": False,
+                "availability": [],
+                "updatedAt": datetime.now().isoformat(timespec="seconds"),
+                "memberCode": member_code or generate_member_code(room),
+                "color": (
+                    MEMBER_COLORS[0]
+                    if nickname == room["creator"]
+                    else member_color(room)
+                ),
+            }
+            if member_code and participant_by_member_code(room, member_code):
+                raise PermissionError("identity")
+            room["participants"].append(participant)
+        save_rooms()
+        return {
+            "code": room["code"],
+            "nickname": participant["nickname"],
+            "memberCode": participant["memberCode"],
+            "color": participant["color"],
+            "memberNo": room.get("participants", []).index(participant) + 1,
+            "isCreator": participant.get("isCreator", False),
+        }
+
+
+def respond_to_room(code, payload):
+    nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
+    if not nickname or len(nickname) > 20:
+        raise ValueError("nickname")
+    with rooms_lock:
+        room = rooms.get(code)
+        if not room:
+            raise KeyError("room")
+        if room.get("chosen"):
+            raise PermissionError("scheduled")
+        participant = authorize_member(room, nickname, member_code)
         availability = validate_availability(
             payload.get("availability", []),
             room["startDate"],
@@ -443,21 +558,9 @@ def respond_to_room(code, payload):
             room.get("dayEnd"),
             room.get("endTime"),
         )
-        existing = participant_by_nickname(room, nickname)
-        if existing is None:
-            if len(room.get("participants", [])) >= room["participantCount"]:
-                raise LookupError("room_full")
-            existing = {
-                "nickname": nickname,
-                "isCreator": nickname == room["creator"],
-                "filled": True,
-                "availability": [],
-                "updatedAt": "",
-            }
-            room["participants"].append(existing)
-        existing["availability"] = availability
-        existing["filled"] = True
-        existing["updatedAt"] = datetime.now().isoformat(timespec="seconds")
+        participant["availability"] = availability
+        participant["filled"] = True
+        participant["updatedAt"] = datetime.now().isoformat(timespec="seconds")
         room["rejectedCandidateIds"] = []
         set_status(room)
         save_rooms()
@@ -466,6 +569,7 @@ def respond_to_room(code, payload):
 
 def choose_plan(code, payload):
     nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
     plan_id_value = str(payload.get("planId", ""))
     with rooms_lock:
         room = rooms.get(code)
@@ -479,8 +583,7 @@ def choose_plan(code, payload):
         selected = next((plan for plan in plans if plan["id"] == plan_id_value), None)
         if selected is None:
             raise LookupError("plan")
-        if not participant_by_nickname(room, nickname):
-            raise PermissionError("not participant")
+        authorize_member(room, nickname, member_code)
         room["chosen"] = {
             "date": selected["date"],
             "start": selected["start"],
@@ -495,6 +598,7 @@ def choose_plan(code, payload):
 
 def adjust_for_candidate(code, payload):
     nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
     plan_id_value = str(payload.get("planId", ""))
     with rooms_lock:
         room = rooms.get(code)
@@ -505,9 +609,7 @@ def adjust_for_candidate(code, payload):
             raise LookupError("candidate")
         if nickname not in candidate["unavailable"]:
             raise PermissionError("not blocker")
-        participant = participant_by_nickname(room, nickname)
-        if participant is None:
-            raise PermissionError("not participant")
+        participant = authorize_member(room, nickname, member_code)
         participant.setdefault("availability", []).append(
             {
                 "date": candidate["date"],
@@ -533,6 +635,7 @@ def adjust_for_candidate(code, payload):
 
 def skip_candidate(code, payload):
     nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
     with rooms_lock:
         room = rooms.get(code)
         if not room:
@@ -544,9 +647,7 @@ def skip_candidate(code, payload):
         candidate = active_candidate(room)
         if not candidate:
             raise LookupError("candidate")
-        participant = participant_by_nickname(room, nickname)
-        if participant is None:
-            raise PermissionError("not participant")
+        participant = authorize_member(room, nickname, member_code)
         if nickname != room["creator"] and nickname not in candidate["unavailable"]:
             raise PermissionError("not blocker")
         rejected = room.setdefault("rejectedCandidateIds", [])
@@ -559,6 +660,7 @@ def skip_candidate(code, payload):
 
 def start_new_round(code, payload):
     nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
     start_date = str(payload.get("startDate", ""))
     end_date = str(payload.get("endDate", ""))
     with rooms_lock:
@@ -567,6 +669,7 @@ def start_new_round(code, payload):
             raise KeyError("room")
         if nickname != room["creator"]:
             raise PermissionError("not creator")
+        authorize_member(room, nickname, member_code)
         end_time = str(payload.get("endTime", room.get("endTime", "24:00")))
         start_parsed = validate_date_text(start_date)
         end_parsed = validate_date_text(end_date)
@@ -590,12 +693,35 @@ def start_new_round(code, payload):
         return room
 
 
+def room_member_codes(code, payload):
+    nickname = str(payload.get("nickname", "")).strip()
+    member_code = str(payload.get("memberCode", "")).strip().upper()
+    with rooms_lock:
+        room = rooms.get(code)
+        if not room:
+            raise KeyError("room")
+        if nickname != room["creator"]:
+            raise PermissionError("not creator")
+        authorize_member(room, nickname, member_code)
+        members = []
+        for index, participant in enumerate(room.get("participants", []), start=1):
+            members.append(
+                {
+                    "memberNo": index,
+                    "nickname": participant["nickname"],
+                    "color": participant.get("color", "gray"),
+                    "memberCode": participant.get("memberCode", ""),
+                }
+            )
+        return {"members": members}
+
+
 def public_room(room):
     with rooms_lock:
         set_status(room)
         filled = filled_participants(room)
         participants = []
-        for participant in room.get("participants", []):
+        for index, participant in enumerate(room.get("participants", []), start=1):
             participants.append(
                 {
                     "nickname": participant["nickname"],
@@ -603,6 +729,9 @@ def public_room(room):
                     "filled": participant.get("filled", False),
                     "availability": participant.get("availability", []),
                     "updatedAt": participant.get("updatedAt", ""),
+                    "memberNo": index,
+                    "color": participant.get("color", "gray"),
+                    "hasMemberCode": bool(participant.get("memberCode")),
                 }
             )
         plans = full_overlap_plans(room) if all_filled(room) else []
@@ -713,6 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                 "not creator": "只有发起人可以发起新一轮",
                 "not blocker": "该时段没有排除你的时间",
                 "already scheduled": "时间已经确定",
+                "identity": "成员身份验证失败，请使用自己的成员访问码",
             }
             message = messages.get(exc.args[0] if exc.args else "", "操作不允许")
             self.send_json(403, {"error": message, "code": "forbidden"})
@@ -774,7 +904,12 @@ class Handler(BaseHTTPRequestHandler):
             payload = self.read_json()
             if path == "/api/rooms":
                 room = create_room(payload)
-                self.send_json(200, public_room(room))
+                response = public_room(room)
+                response["creatorMemberCode"] = room["participants"][0].get(
+                    "memberCode", ""
+                )
+                response["creatorColor"] = room["participants"][0].get("color", "")
+                self.send_json(200, response)
                 return
             match = re.fullmatch(r"/api/room/([A-Z0-9]+)/([a-z_]+)", path)
             if not match:
@@ -782,6 +917,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             code, action = match.group(1), match.group(2)
             actions = {
+                "identify": identify_in_room,
+                "member_codes": room_member_codes,
                 "respond": respond_to_room,
                 "choose": choose_plan,
                 "adjust": adjust_for_candidate,
@@ -791,8 +928,13 @@ class Handler(BaseHTTPRequestHandler):
             if action not in actions:
                 self.send_json(404, {"error": "接口不存在", "code": "not_found"})
                 return
-            room = actions[action](code, payload)
-            self.send_json(200, public_room(room))
+            result = actions[action](code, payload)
+            if action == "identify":
+                self.send_json(200, result)
+            elif action == "member_codes":
+                self.send_json(200, result)
+            else:
+                self.send_json(200, public_room(result))
         except Exception as exc:  # noqa: BLE001
             self.handle_api_error(exc)
 
