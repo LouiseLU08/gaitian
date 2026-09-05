@@ -735,6 +735,43 @@ button {
   background: var(--accent);
 }
 
+.avatar-blue { background: #2563eb; }
+.avatar-green { background: #16a34a; }
+.avatar-orange { background: #ea580c; }
+.avatar-purple { background: #7c3aed; }
+.avatar-red { background: #dc2626; }
+.avatar-teal { background: #0d9488; }
+.avatar-pink { background: #db2777; }
+.avatar-brown { background: #92400e; }
+.avatar-gray { background: #6b7280; }
+
+.member-tag {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff8f0;
+  margin-bottom: 14px;
+}
+
+.member-code-list {
+  margin-top: 10px;
+}
+
+.member-code-value {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
 .participant-name {
   font-weight: 700;
 }
