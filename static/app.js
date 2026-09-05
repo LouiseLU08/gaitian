@@ -253,6 +253,9 @@ function statusMeta(status) {
 
 function participantName(room = state.room) {
   const matchNo = state.myMemberNo;
+  if (!state.myMemberNo && !state.myMemberCode) {
+    return undefined;
+  }
   return (room.participants || []).find(
     (item) =>
       (matchNo && item.memberNo === matchNo) ||
@@ -1336,9 +1339,6 @@ async function loadRoom() {
     me.nickname === state.myNickname;
   state.identityState =
     identityStillValid ? "ready" : data.chosen ? "ready" : "needed";
-  if (!state.myNickname && me) {
-    state.myNickname = me.nickname;
-  }
   if (state.identityState === "ready") {
     syncEditorWithMe();
   } else {
