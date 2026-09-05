@@ -735,15 +735,30 @@ button {
   background: var(--accent);
 }
 
+.avatar-light-blue { background: #5b8def; }
 .avatar-blue { background: #2563eb; }
+.avatar-deep-blue { background: #173e8f; }
+.avatar-light-green { background: #54c86f; }
 .avatar-green { background: #16a34a; }
+.avatar-deep-green { background: #166534; }
+.avatar-light-orange { background: #f78c46; }
 .avatar-orange { background: #ea580c; }
-.avatar-purple { background: #7c3aed; }
+.avatar-deep-orange { background: #9a3412; }
+.avatar-light-red { background: #ef6f6f; }
 .avatar-red { background: #dc2626; }
-.avatar-teal { background: #0d9488; }
+.avatar-deep-red { background: #991b1b; }
+.avatar-light-purple { background: #9f6cf0; }
+.avatar-purple { background: #7c3aed; }
+.avatar-deep-purple { background: #5b21b6; }
+.avatar-light-pink { background: #ee78ad; }
 .avatar-pink { background: #db2777; }
-.avatar-brown { background: #92400e; }
+.avatar-deep-pink { background: #9d174d; }
+.avatar-light-teal { background: #3fb8ad; }
+.avatar-teal { background: #0d9488; }
+.avatar-deep-teal { background: #115e59; }
+.avatar-light-gray { background: #9ca3af; }
 .avatar-gray { background: #6b7280; }
+.avatar-deep-gray { background: #374151; }
 
 .member-tag {
   color: var(--muted);
