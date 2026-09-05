@@ -17,15 +17,30 @@ const state = {
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const TIME_VALUES = Array.from({ length: 49 }, (_, index) => index * 30);
 const COLOR_LABELS = {
+  "light-blue": "浅蓝",
   blue: "蓝色",
+  "deep-blue": "深蓝",
+  "light-green": "浅绿",
   green: "绿色",
+  "deep-green": "深绿",
+  "light-orange": "浅橙",
   orange: "橙色",
-  purple: "紫色",
+  "deep-orange": "深橙",
+  "light-red": "浅红",
   red: "红色",
-  teal: "青色",
+  "deep-red": "深红",
+  "light-purple": "浅紫",
+  purple: "紫色",
+  "deep-purple": "深紫",
+  "light-pink": "浅粉",
   pink: "粉色",
-  brown: "棕色",
+  "deep-pink": "深粉",
+  "light-teal": "浅青",
+  teal: "青色",
+  "deep-teal": "深青",
+  "light-gray": "浅灰",
   gray: "灰色",
+  "deep-gray": "深灰",
 };
 const PRESETS = [
   { key: "full", label: "整天", start: "00:00", end: "24:00" },
