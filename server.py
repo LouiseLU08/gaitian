@@ -19,7 +19,32 @@ CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 MEMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 MEMBER_CODE_LENGTH = 6
-MEMBER_COLORS = ["blue", "green", "orange", "purple", "red", "teal", "pink", "brown"]
+MEMBER_COLORS = [
+    "light-blue",
+    "blue",
+    "deep-blue",
+    "light-green",
+    "green",
+    "deep-green",
+    "light-orange",
+    "orange",
+    "deep-orange",
+    "light-red",
+    "red",
+    "deep-red",
+    "light-purple",
+    "purple",
+    "deep-purple",
+    "light-pink",
+    "pink",
+    "deep-pink",
+    "light-teal",
+    "teal",
+    "deep-teal",
+    "light-gray",
+    "gray",
+    "deep-gray",
+]
 TIME_STEP_MINUTES = 30
 MAX_RANGE_DAYS = 45
 MAX_PARTICIPANTS = 20
